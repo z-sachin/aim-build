@@ -176,6 +176,8 @@ class AIMRuntime:
         self,
         model_id: Optional[str] = None,
         use_hf_cache: bool = False,
+        include: Optional[List[str]] = None,
+        exclude: Optional[List[str]] = None,
     ) -> str:
         """
         Download model to cache directory.
@@ -191,6 +193,9 @@ class AIMRuntime:
                       Overrides profile selection.
             use_hf_cache: Use HuggingFace's default cache directory structure instead of
                           downloading directly to local directory.
+            include: Glob patterns of repository files to download. None downloads
+                     the whole repository.
+            exclude: Glob patterns of repository files to skip.
 
         Returns:
             Path: The path where the model was downloaded
@@ -231,7 +236,7 @@ class AIMRuntime:
 
         # Estimate storage before downloading
         logger.info("Estimating storage requirements...")
-        size_gb = self.storage_registry.estimate_storage(model_source)
+        size_gb = self.storage_registry.estimate_storage(model_source, allow_patterns=include, ignore_patterns=exclude)
         if size_gb:
             logger.info(f"Estimated model size: {size_gb} GB")
         else:
@@ -245,7 +250,11 @@ class AIMRuntime:
             logger.info(f"Downloading model to local directory: {self.config.cache_path}")
 
         downloaded_path = self.storage_registry.download(
-            model_source, self.config.cache_path, use_hf_cache=use_hf_cache
+            model_source,
+            self.config.cache_path,
+            use_hf_cache=use_hf_cache,
+            allow_patterns=include,
+            ignore_patterns=exclude,
         )
 
         logger.info(f"✓ Model successfully downloaded to: {downloaded_path}")
@@ -302,6 +311,9 @@ class AIMRuntime:
             os.environ[key] = str(value)
             logger.info(f"Set env var: {key}={value}")
         logger.info("-------------------------------------")
+
+        # Step 4b: Engine-specific model preparation (e.g. HF -> GGUF conversion)
+        self.engine.prepare_model()
 
         # Step 5: Log command
         logger.info("--- Execution Command ---")

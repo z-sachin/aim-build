@@ -147,7 +147,18 @@ def dry_run(format):
     default=False,
     help="Use HuggingFace's default cache directory structure instead of downloading directly to local directory.",
 )
-def download_to_cache(model_id, use_hf_cache):
+@click.option(
+    "--include",
+    multiple=True,
+    help="Download only repository files matching this glob (repeatable), e.g. a single .gguf file "
+    "from a repository that ships several quantizations. Default: the whole repository.",
+)
+@click.option(
+    "--exclude",
+    multiple=True,
+    help='Skip repository files matching this glob (repeatable), e.g. "original/*".',
+)
+def download_to_cache(model_id, use_hf_cache, include, exclude):
     """Download the model to cache.
 
     Downloads the model to the cache directory specified by AIM_CACHE_PATH environment variable.
@@ -160,6 +171,8 @@ def download_to_cache(model_id, use_hf_cache):
       aim-runtime download-to-cache
       aim-runtime download-to-cache --model-id hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0
       aim-runtime download-to-cache --use-hf-cache
+      aim-runtime download-to-cache --model-id hf://Qwen/Qwen2.5-7B-Instruct-GGUF --include "*q8_0*.gguf"
+      aim-runtime download-to-cache --model-id hf://meta-llama/Llama-3.1-8B-Instruct --exclude "original/*"
     """
     try:
         # Load configuration from environment variables
@@ -173,7 +186,12 @@ def download_to_cache(model_id, use_hf_cache):
 
         # Download the model
         # Custom model name from CLI takes precedence over env var
-        downloaded_path = runtime.download_to_cache(model_id=model_id, use_hf_cache=use_hf_cache)
+        downloaded_path = runtime.download_to_cache(
+            model_id=model_id,
+            use_hf_cache=use_hf_cache,
+            include=list(include) or None,
+            exclude=list(exclude) or None,
+        )
 
         print(f"\nModel downloaded to: {downloaded_path}")
 

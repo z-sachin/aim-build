@@ -220,7 +220,9 @@ class TestDownloadToCacheCommand:
                     # Test HuggingFace protocol
                     result = runner.invoke(cli, ["download-to-cache", "--model-id", "hf://org/model"])
                     assert result.exit_code == 0
-                    mock_runtime.download_to_cache.assert_called_with(model_id="hf://org/model", use_hf_cache=False)
+                    mock_runtime.download_to_cache.assert_called_with(
+                        model_id="hf://org/model", use_hf_cache=False, include=None, exclude=None
+                    )
 
     """Test suite for download-to-cache command."""
 
@@ -237,7 +239,9 @@ class TestDownloadToCacheCommand:
 
                     result = runner.invoke(cli, ["download-to-cache"])
                     assert result.exit_code == 0
-                    mock_runtime.download_to_cache.assert_called_once_with(model_id=None, use_hf_cache=False)
+                    mock_runtime.download_to_cache.assert_called_once_with(
+                        model_id=None, use_hf_cache=False, include=None, exclude=None
+                    )
 
     def test_download_to_cache_with_custom_cache_dir(self, runner, tmp_path):
         """Test download-to-cache command with custom cache directory via AIM_CACHE_PATH env var."""
@@ -262,7 +266,9 @@ class TestDownloadToCacheCommand:
 
                     result = runner.invoke(cli, ["download-to-cache"])
                     assert result.exit_code == 0
-                    mock_runtime.download_to_cache.assert_called_once_with(model_id=None, use_hf_cache=False)
+                    mock_runtime.download_to_cache.assert_called_once_with(
+                        model_id=None, use_hf_cache=False, include=None, exclude=None
+                    )
 
     def test_download_to_cache_with_quantized_model(self, mock_config, runner, tmp_path):
         """
@@ -280,7 +286,9 @@ class TestDownloadToCacheCommand:
 
                     result = runner.invoke(cli, ["download-to-cache"])
                     assert result.exit_code == 0
-                    mock_runtime.download_to_cache.assert_called_once_with(model_id=None, use_hf_cache=False)
+                    mock_runtime.download_to_cache.assert_called_once_with(
+                        model_id=None, use_hf_cache=False, include=None, exclude=None
+                    )
 
     def test_download_to_cache_no_model_in_profile(self, mock_config, runner, tmp_path):
         """Test download-to-cache command with profile missing model field."""
@@ -296,7 +304,9 @@ class TestDownloadToCacheCommand:
 
                     result = runner.invoke(cli, ["download-to-cache"])
                     assert result.exit_code == 1
-                    mock_runtime.download_to_cache.assert_called_once_with(model_id=None, use_hf_cache=False)
+                    mock_runtime.download_to_cache.assert_called_once_with(
+                        model_id=None, use_hf_cache=False, include=None, exclude=None
+                    )
 
     def test_download_to_cache_handles_download_error(self, mock_config, runner, tmp_path):
         """Test download-to-cache command handles download errors gracefully."""
@@ -309,7 +319,9 @@ class TestDownloadToCacheCommand:
 
                     result = runner.invoke(cli, ["download-to-cache"])
                     assert result.exit_code == 1
-                    mock_runtime.download_to_cache.assert_called_once_with(model_id=None, use_hf_cache=False)
+                    mock_runtime.download_to_cache.assert_called_once_with(
+                        model_id=None, use_hf_cache=False, include=None, exclude=None
+                    )
 
     def test_download_to_cache_with_use_hf_cache_flag(self, mock_config, runner, tmp_path):
         """Test download-to-cache command with --use-hf-cache flag."""
@@ -326,7 +338,9 @@ class TestDownloadToCacheCommand:
                     result = runner.invoke(cli, ["download-to-cache", "--use-hf-cache"])
                     assert result.exit_code == 0
                     # Verify the download was called with use_hf_cache=True
-                    mock_runtime.download_to_cache.assert_called_once_with(model_id=None, use_hf_cache=True)
+                    mock_runtime.download_to_cache.assert_called_once_with(
+                        model_id=None, use_hf_cache=True, include=None, exclude=None
+                    )
 
 
 class TestValidateCommand:

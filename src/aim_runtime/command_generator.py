@@ -123,12 +123,6 @@ class CommandGenerator:
 
         # Resolve model path using cache resolver
         resolved_model = self.cache_resolver.resolve_model_path(model_id)
-        if resolved_model is None:
-            # Fallback to model_id if resolution fails
-            logger.warning(f"Could not resolve model path for {model_id}, using model_id directly")
-            model_path = model_id
-        else:
-            model_path = resolved_model.path
 
         # Build served-model-name as a list: [model_id, aim_id] (deduplicated)
         # Always set served-model-name regardless of cache type
@@ -137,8 +131,15 @@ class CommandGenerator:
         if self.config.aim_id and self.config.aim_id != model_id:
             served_model_name_list.append(self.config.aim_id)
 
-        # Merge and validate engine arguments
+        # Merge and validate engine arguments (before resolve_model_path, which may strip hints)
         engine_args = self._merge_and_validate_engine_args(profile)
+
+        if resolved_model is None:
+            # Fallback to model_id if resolution fails
+            logger.warning(f"Could not resolve model path for {model_id}, using model_id directly")
+            model_path = model_id
+        else:
+            model_path = self.engine.resolve_model_path(resolved_model, engine_args, profile)
 
         # Merge LoRA adapter engine args when the profile declares support, so
         # they flow through serialization (the env half is added in

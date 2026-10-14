@@ -12,9 +12,10 @@ and functionality to estimate storage requirements for model downloads.
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import List, Optional
 
 from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub.utils import filter_repo_objects
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,9 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
             return model_source[5:]
         return model_source
 
-    def _estimate_from_api(self, model_id: str) -> Optional[float]:
+    def _estimate_from_api(
+        self, model_id: str, allow_patterns: Optional[List[str]] = None, ignore_patterns: Optional[List[str]] = None
+    ) -> Optional[float]:
         """
         Estimate storage requirements by querying HuggingFace Hub API.
 
@@ -120,14 +123,19 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
 
         Args:
             model_id: HuggingFace model ID (without "hf://" prefix)
+            allow_patterns: Count only files matching these glob patterns, as
+                            ``download`` does. None counts the whole repository.
+            ignore_patterns: Skip files matching these glob patterns.
 
         Returns:
             Estimated size in GB (float), or None if API call fails
         """
+        cache_key = (model_id, tuple(allow_patterns or ()), tuple(ignore_patterns or ()))
+
         # Check cache first
-        if model_id in self._cache:
+        if cache_key in self._cache:
             logger.debug(f"Using cached API result for model: {model_id}")
-            return self._cache[model_id]
+            return self._cache[cache_key]
 
         # Check if HuggingFace Hub is available
         if HfApi is None:
@@ -151,7 +159,15 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
             total_size = 0
 
             if hasattr(model_info, "siblings") and model_info.siblings:
-                for file_info in model_info.siblings:
+                siblings = model_info.siblings
+                if allow_patterns or ignore_patterns:
+                    siblings = filter_repo_objects(
+                        siblings,
+                        allow_patterns=allow_patterns,
+                        ignore_patterns=ignore_patterns,
+                        key=lambda f: f.rfilename,
+                    )
+                for file_info in siblings:
                     if hasattr(file_info, "size") and file_info.size:
                         file_size = file_info.size
                         total_size += file_size
@@ -163,7 +179,7 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
             # Convert bytes to GB
             size_gb = round(total_size / (1024**3), 2)
             # Cache the result
-            self._cache[model_id] = size_gb
+            self._cache[cache_key] = size_gb
             logger.debug(f"API result for {model_id}: {size_gb}GB total")
             return size_gb
 
@@ -171,26 +187,38 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
             logger.debug(f"Failed to estimate from API: {e}")
             return None
 
-    def estimate_storage(self, model_id: str) -> Optional[float]:
+    def estimate_storage(
+        self, model_id: str, allow_patterns: Optional[List[str]] = None, ignore_patterns: Optional[List[str]] = None
+    ) -> Optional[float]:
         """
         Estimate storage requirements using HuggingFace Hub API.
 
         Args:
             model_id: HuggingFace model ID (with or without hf:// prefix)
+            allow_patterns: Count only files matching these glob patterns.
+            ignore_patterns: Skip files matching these glob patterns.
 
         Returns:
             Estimated size in GB (float), or None if unavailable
         """
         model_id = self._extract_model_id(model_id)
-        api_result = self._estimate_from_api(model_id)
+        api_result = self._estimate_from_api(model_id, allow_patterns=allow_patterns, ignore_patterns=ignore_patterns)
         return api_result
 
-    def download(self, model_id: str, cache_dir: str = None, use_hf_cache: bool = False) -> str:
+    def download(
+        self,
+        model_id: str,
+        cache_dir: str = None,
+        use_hf_cache: bool = False,
+        allow_patterns: Optional[List[str]] = None,
+        ignore_patterns: Optional[List[str]] = None,
+    ) -> str:
         """
         Download a model from HuggingFace Hub using snapshot_download.
 
         This downloads the complete model repository including all files
-        (weights, config, tokenizer, etc.) to the cache directory.
+        (weights, config, tokenizer, etc.) to the cache directory, filtered by
+        ``allow_patterns`` and ``ignore_patterns`` when given.
 
         Args:
             model_id: HuggingFace model ID (with or without hf:// prefix)
@@ -199,6 +227,9 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
                       (determined by HF_HOME or platform defaults).
             use_hf_cache: If True, uses HuggingFace's cache structure (cache_dir parameter).
                          If False (default), downloads directly to local directory (local_dir parameter).
+            allow_patterns: Glob patterns of repository files to download. None downloads
+                            the whole repository.
+            ignore_patterns: Glob patterns of repository files to skip.
 
         Returns:
             Path to the downloaded model directory
@@ -227,8 +258,8 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
                     cache_dir=cache_dir,
                     token=self._hf_token,
                     resume_download=True,
-                    allow_patterns=None,
-                    ignore_patterns=None,
+                    allow_patterns=allow_patterns,
+                    ignore_patterns=ignore_patterns,
                 )
             else:
                 # Use local_dir parameter to download directly to the target directory
@@ -243,8 +274,8 @@ class HuggingFaceStorageBackend(ModelStorageBackend):
                     local_dir=local_dir_path,
                     token=self._hf_token,
                     resume_download=True,
-                    allow_patterns=None,
-                    ignore_patterns=None,
+                    allow_patterns=allow_patterns,
+                    ignore_patterns=ignore_patterns,
                 )
 
             logger.info(f"Successfully downloaded model to: {downloaded_path}")
@@ -300,12 +331,19 @@ class StorageBackendRegistry:
         logger.warning(f"No storage backend found for model source: {model_source}")
         return None
 
-    def estimate_storage(self, model_source: str) -> Optional[float]:
+    def estimate_storage(
+        self,
+        model_source: str,
+        allow_patterns: Optional[List[str]] = None,
+        ignore_patterns: Optional[List[str]] = None,
+    ) -> Optional[float]:
         """
         Estimate storage requirements for a model.
 
         Args:
             model_source: Model source URI
+            allow_patterns: For HuggingFace backend, count only files matching these glob patterns.
+            ignore_patterns: For HuggingFace backend, skip files matching these glob patterns.
 
         Returns:
             Estimated size in GB (float), or None if unavailable
@@ -322,9 +360,18 @@ class StorageBackendRegistry:
         else:
             model_id = model_source
 
+        if isinstance(backend, HuggingFaceStorageBackend):
+            return backend.estimate_storage(model_id, allow_patterns=allow_patterns, ignore_patterns=ignore_patterns)
         return backend.estimate_storage(model_id)
 
-    def download(self, model_source: str, cache_dir: str = None, use_hf_cache: bool = False) -> str:
+    def download(
+        self,
+        model_source: str,
+        cache_dir: str = None,
+        use_hf_cache: bool = False,
+        allow_patterns: Optional[List[str]] = None,
+        ignore_patterns: Optional[List[str]] = None,
+    ) -> str:
         """
         Download a model using the appropriate backend.
 
@@ -334,6 +381,9 @@ class StorageBackendRegistry:
                       For HuggingFace backend: If None, uses HF's default cache (HF_HOME).
             use_hf_cache: For HuggingFace backend, whether to use HF's cache structure (True)
                          or download directly to local directory (False, default).
+            allow_patterns: For HuggingFace backend, glob patterns of repository files to
+                            download. None downloads the whole repository.
+            ignore_patterns: For HuggingFace backend, glob patterns of repository files to skip.
 
         Returns:
             Path to the downloaded model
@@ -355,8 +405,16 @@ class StorageBackendRegistry:
 
         # HuggingFace backend supports both cache_dir and local_dir modes
         if isinstance(backend, HuggingFaceStorageBackend):
-            return backend.download(model_id, cache_dir=cache_dir, use_hf_cache=use_hf_cache)
+            return backend.download(
+                model_id,
+                cache_dir=cache_dir,
+                use_hf_cache=use_hf_cache,
+                allow_patterns=allow_patterns,
+                ignore_patterns=ignore_patterns,
+            )
         else:
+            if allow_patterns or ignore_patterns:
+                raise ValueError(f"File filtering is not supported for {backend.__class__.__name__}")
             # Other backends (fallback)
             if cache_dir is None:
                 raise ValueError(f"cache_dir is required for {backend.__class__.__name__}")

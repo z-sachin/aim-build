@@ -39,7 +39,7 @@ class TestHuggingFaceStorageBackend:
         """Test that storage estimation returns None when API fails."""
 
         # Mock _estimate_from_api to return None
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return None
 
         monkeypatch.setattr(backend, "_estimate_from_api", mock_estimate_from_api)
@@ -52,7 +52,7 @@ class TestHuggingFaceStorageBackend:
         """Test storage estimation with hf:// prefix."""
 
         # Mock _estimate_from_api to return None
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return None
 
         monkeypatch.setattr(backend, "_estimate_from_api", mock_estimate_from_api)
@@ -95,6 +95,47 @@ class TestHuggingFaceStorageBackend:
         # When using local_dir (default), the model_id is appended to cache_dir
         assert result == "/tmp/cache/meta-llama/Llama-3.1-8B-Instruct/snapshots/abc123"
 
+    def test_estimate_counts_only_allowed_files(self, backend, monkeypatch):
+        """The estimate covers only the files that download would fetch."""
+        from types import SimpleNamespace
+
+        from aim_runtime import model_storage
+
+        siblings = [
+            SimpleNamespace(rfilename="model-Q8_0.gguf", size=8 * 1024**3),
+            SimpleNamespace(rfilename="model-bf16.gguf", size=16 * 1024**3),
+            SimpleNamespace(rfilename="README.md", size=1024),
+        ]
+
+        class FakeApi:
+            def __init__(self, token=None):
+                pass
+
+            def model_info(self, model_id, files_metadata):
+                return SimpleNamespace(siblings=siblings)
+
+        monkeypatch.setattr(model_storage, "HfApi", FakeApi)
+
+        assert backend.estimate_storage("org/model-GGUF", allow_patterns=["*Q8_0.gguf"]) == 8.0
+        assert backend.estimate_storage("org/model-GGUF", ignore_patterns=["*bf16*"]) == 8.0
+        assert backend.estimate_storage("org/model-GGUF") == 24.0
+
+    def test_download_passes_allow_patterns(self, backend, monkeypatch):
+        """Only the requested repository files are downloaded."""
+        calls = {}
+
+        def mock_snapshot_download(**kwargs):
+            calls.update(kwargs)
+            return kwargs["local_dir"]
+
+        from aim_runtime import model_storage
+
+        monkeypatch.setattr(model_storage, "snapshot_download", mock_snapshot_download)
+
+        backend.download("org/model-GGUF", "/tmp/cache", allow_patterns=["*q8_0*.gguf"], ignore_patterns=["original/*"])
+        assert calls["allow_patterns"] == ["*q8_0*.gguf"]
+        assert calls["ignore_patterns"] == ["original/*"]
+
     def test_download_failure(self, backend, monkeypatch):
         """Test download failure handling."""
 
@@ -131,7 +172,7 @@ class TestStorageBackendRegistry:
         """Test storage estimation through registry."""
 
         # Mock the backend's _estimate_from_api to return test data
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return 16.0
 
         backend = registry.get_backend("hf://meta-llama/Llama-3.1-8B-Instruct")
@@ -242,7 +283,7 @@ class TestAPIBasedEstimation:
     def test_estimate_storage_uses_api(self, backend, monkeypatch):
         """Test that estimate_storage uses API."""
 
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return 16.0
 
         monkeypatch.setattr(backend, "_estimate_from_api", mock_estimate_from_api)
@@ -251,7 +292,7 @@ class TestAPIBasedEstimation:
 
     def test_estimate_storage_returns_none_when_api_fails(self, backend, monkeypatch):
         # Mock the _estimate_from_api method to return None (API failure)
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return None
 
         monkeypatch.setattr(backend, "_estimate_from_api", mock_estimate_from_api)
@@ -261,7 +302,7 @@ class TestAPIBasedEstimation:
         """Test that API results are cached."""
         call_count = 0
 
-        def counting_estimate(model_id):
+        def counting_estimate(model_id, allow_patterns=None, ignore_patterns=None):
             nonlocal call_count
             call_count += 1
             # Check cache first (mimicking real behavior)
@@ -285,7 +326,7 @@ class TestAPIBasedEstimation:
         """Test that API is called each time (no caching)."""
         call_count = 0
 
-        def counting_estimate(model_id):
+        def counting_estimate(model_id, allow_patterns=None, ignore_patterns=None):
             nonlocal call_count
             call_count += 1
             # Simulate API call
@@ -314,7 +355,7 @@ class TestEdgeCases:
         """Test handling of empty model ID."""
 
         # Mock API to return None
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return None
 
         monkeypatch.setattr(backend, "_estimate_from_api", mock_estimate_from_api)
@@ -326,7 +367,7 @@ class TestEdgeCases:
         """Test that hf:// prefix is properly extracted."""
 
         # Mock API to return None
-        def mock_estimate_from_api(model_id):
+        def mock_estimate_from_api(model_id, allow_patterns=None, ignore_patterns=None):
             return None
 
         monkeypatch.setattr(backend, "_estimate_from_api", mock_estimate_from_api)
